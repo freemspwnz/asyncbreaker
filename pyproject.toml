@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["asyncbreaker"]
+check_untyped_defs = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = "fakeredis.*"
+ignore_missing_imports = true
+
+[tool.pylint.main]
+max-line-length = 120
+jobs = 1
+
+[tool.pylint."messages control"]
+disable = [
+    "too-many-arguments",
+    "too-many-positional-arguments",
+    "too-many-public-methods",
+    "protected-access",
+    "broad-exception-caught",
+    "unnecessary-pass",
+    "unidiomatic-typecheck",
+]
+
+[tool.bandit]
+exclude_dirs = ["test", "build", "docs"]

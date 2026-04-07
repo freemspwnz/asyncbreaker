@@ -1,63 +1,92 @@
-aiobreaker
+asyncbreaker
 ==========
 
-aiobreaker is a Python implementation of the Circuit Breaker pattern,
-described in Michael T. Nygard's book `Release It!`_.
+**asyncbreaker** is an **asyncio-first** Python implementation of the Circuit Breaker pattern
+from Michael T. Nygard's book `Release It!`_.
 
-Circuit breakers exist to allow one subsystem to fail without destroying
-the entire system. This is done by wrapping dangerous operations
-(typically integration points) with a component that can circumvent
-calls when the system is not healthy.
+Circuit breakers let one subsystem fail without taking down the whole application: you wrap
+risky calls (often I/O or integration boundaries) so that repeated failures **trip** the breaker,
+subsequent calls fail fast for a **reset timeout**, then a single **trial** call may close
+the circuit again.
 
-This project is a fork of pybreaker_ by Daniel Fernandes Martins that
-replaces tornado with native asyncio, originally so I could practice
-packaging and learn about that shiny new ``typing`` package.
+Lineage
+-------
+
+* **pybreaker** (Daniel Fernandes Martins) — original design.
+* **aiobreaker fork** (Alexander Lyon) — asyncio instead of Tornado, packaging experiments.
+* **Current line** — maintained by Sergey Turbinov; substantial rewrite toward a pure async API,
+  async storage, and async listeners. Contact: `@freems`_ on Telegram.
 
 .. _`Release It!`: https://pragprog.com/titles/mnee2/release-it-second-edition/
 .. _pybreaker: https://github.com/danielfm/pybreaker
+.. _@freems: https://t.me/freems
 
 Features
 --------
 
-- Configurable list of excluded exceptions (e.g. business exceptions)
-- Configurable failure threshold and reset timeout
-- Support for several event listeners per circuit breaker
-- Can guard generator functions
-- Functions and properties for easy monitoring and management
-- ``asyncio`` support
-- Optional redis backing
-- Synchronous and asynchronous event listeners
+* Async ``CircuitBreaker`` — use ``await breaker.call(...)``
+* Configurable failure threshold (``fail_max``) and reset window (``timeout_duration``)
+* Excluded exceptions and predicate callables (business vs system errors)
+* Multiple **async** ``CircuitBreakerListener`` instances
+* Pluggable **async** storage: in-process memory or Redis via ``redis.asyncio``
+* Optional ``redis`` extra for Redis-backed storage
 
 Requirements
 ------------
 
-All you need is ``python 3.6`` or higher.
+Python **3.10+** (async patterns and typing used throughout).
 
 Installation
 ------------
 
-To install, simply download from pypi:
+.. code:: bash
+
+    pip install asyncbreaker
+
+With Redis support (``redis`` package):
 
 .. code:: bash
 
-    pip install aiobreaker
+    pip install asyncbreaker[redis]
 
 Usage
 -----
 
-The first step is to create an instance of ``CircuitBreaker`` for each
-integration point you want to protect against.
+Create a breaker per integration point. Only **async** callables are supported; the decorator
+rejects ordinary ``def`` functions.
 
 .. code:: python
 
-    from aiobreaker import CircuitBreaker
+    from datetime import timedelta
 
-    # Used in database integration points
-    db_breaker = CircuitBreaker(fail_max=5, reset_timeout=timedelta(seconds=60))
+    from asyncbreaker import CircuitBreaker
 
-    @db_breaker
-    async def outside_integration():
-        """Hits the api"""
+    api_breaker = CircuitBreaker(fail_max=5, timeout_duration=timedelta(seconds=60))
+
+    @api_breaker
+    async def fetch_remote():
         ...
 
-At that point, go ahead and get familiar with the documentation.
+    # or explicitly:
+    await api_breaker.call(fetch_remote)
+
+See the **Usage** chapter in the full documentation (``docs/``) for listeners, storage,
+manual ``open`` / ``close`` / ``half_open``, and exclusion rules.
+
+Documentation
+-------------
+
+Build locally:
+
+.. code:: bash
+
+    pip install -e '.[docs]'
+    sphinx-build docs/source docs/build
+
+The HTML entry point is ``docs/build/index.html``.
+
+License
+-------
+
+BSD 3-Clause; see ``license.md``. This project bundles copyright from the pybreaker lineage;
+additional copyright applies to the asyncio rewrite (see ``license.md``).
