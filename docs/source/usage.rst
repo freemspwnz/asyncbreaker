@@ -1,99 +1,116 @@
 Usage
------
+=====
 
-.. include:: ../../readme.rst
-    :start-after:
-        Usage
-        -----
+Calling functions through the breaker
+--------------------------------------
 
-Calling Functions With The Breaker
-==================================
-
-There are two primary ways of calling functions using the
-breaker. The first is to wrap the functions you want in a
-decorator, as seen above.
-
-Using a :class:`~aiobreaker.circuitbreaker.CircuitBreaker`
-to decorate the functions you wish to use it with is a
-"set it and forget it" approach and works quite well
-however it requires you to `always` use the circuit breaker.
-Another option is the :func:`~aiobreaker.circuitbreaker.CircuitBreaker.call`
-or :func:`~aiobreaker.circuitbreaker.CircuitBreaker.call_async`
-functions which allow you to route functions through a breaker at will.
+Use :meth:`asyncbreaker.circuitbreaker.CircuitBreaker.call` (async) or the decorator.
+The decorator only accepts **async** functions.
 
 .. code:: python
 
-    from aiobreaker import CircuitBreaker
+    from asyncbreaker import CircuitBreaker
 
     breaker = CircuitBreaker()
-    bar = breaker.call(foo)
-    async_bar = await breaker.call_async(async_foo)
 
-By default there is a check to make sure if you were to pass
-a decorated function into a breaker's `call` method that the
-validation logic isn't performed twice. To disable this, set
-the ``ignore_on_call`` parameter to ``False`` on the decorator
-:func:`~aiobreaker.circuitbreaker.CircuitBreaker.__call__`.
+    @breaker
+    async def work():
+        ...
 
-Manually Setting Or Resetting The Circuit
-=========================================
+    result = await breaker.call(work)
 
-The circuit can be manually opened or closed if needed.
-:func:`~aiobreaker.circuitbreaker.CircuitBreaker.open` will open
-the circuit causing subsequent calls to fail until the
-:attr:`~aiobreaker.circuitbreaker.CircuitBreaker.timeout_duration`
-elapses. Similarly, :func:`~aiobreaker.circuitbreaker.CircuitBreaker.close`
-will override the checks and immediately close the breaker, causing
-further calls to succeed again.
+If you pass a decorated function into :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.call`,
+the breaker avoids applying logic twice (``ignore_on_call`` on the wrapper). To change that,
+pass ``ignore_on_call=False`` to the decorator: ``@breaker(ignore_on_call=False)``.
 
-Listening For Events On The Breaker
-===================================
+Manual open, half-open, close
+------------------------------
 
-To listen for events, you must implement a listener. A listener
-is anything that subclasses and overrides the functions on the
-:class:`~aiobreaker.listener.CircuitBreakerListener` class.
+All of these are **async** and update storage plus notify listeners:
+
+* :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.open` — trip the breaker (state OPEN, ``opened_at`` set atomically in Redis storage).
+* :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.half_open` — allow one trial call and **clear** ``opened_at`` in storage (memory and Redis) so :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.compute_opens_at` / :meth:`~.circuitbreaker.CircuitBreaker.get_time_until_open` do not reflect a stale OPEN window while HALF_OPEN.
+* :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.close` — force CLOSED and reset the failure counter.
 
 .. code:: python
 
-    from aiobreaker import CircuitBreaker, CircuitBreakerListener
+    await breaker.open()
+    # ...
+    await breaker.close()
+
+State and metrics (async)
+-------------------------
+
+Storage is always accessed with ``await``:
+
+* :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.get_fail_counter`
+* :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.get_current_state`
+* :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.fetch_state` — refresh cached behavioral state from storage (e.g. another process changed Redis).
+* :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.compute_opens_at` — naive UTC instant when the OPEN reset window ends, or ``None`` if there is no active window (CLOSED, or HALF_OPEN with ``opened_at`` cleared).
+* :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.set_circuit_state` — persist an enum value and swap the cached state object. Pass a :class:`~asyncbreaker.state.CircuitBreakerState` member; other values raise ``ValueError``.
+
+Note: :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.get_current_state` reads storage only; the in-memory behavioral state is refreshed on :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.fetch_state` and before each :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.call`.
+
+Async listeners
+---------------
+
+Subclass :class:`asyncbreaker.listener.CircuitBreakerListener` and override **async** methods:
+
+* ``before_call``, ``success``, ``failure``, ``state_change`` — all are ``async def``.
+
+.. code:: python
+
+    import logging
+
+    from asyncbreaker import CircuitBreaker, CircuitBreakerListener
+
+    logger = logging.getLogger(__name__)
 
     class LogListener(CircuitBreakerListener):
-
-        def state_change(self, breaker, old, new):
-            logger.info(f"{old.state} -> {new.state}")
-
+        async def state_change(self, breaker, old, new):
+            logger.info("%s -> %s", old.state, new.state)
 
     breaker = CircuitBreaker(listeners=[LogListener()])
 
-Listeners can be added and removed on the fly with the
-:func:`~aiobreaker.circuitbreaker.CircuitBreaker.add_listener` and
-:func:`~aiobreaker.circuitbreaker.CircuitBreaker.remove_listener`
-functions.
+Register or remove listeners with :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.add_listener`
+and :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.remove_listener`.
 
+Redis storage
+-------------
 
-Ignoring Specific Exceptions
-============================
-
-If there are specific exceptions that shouldn't be considered
-by the breaker, they can be specified, added, and removed in
-a similar way to the way Listeners are handled.
+Use a ``redis.asyncio.Redis`` client and :class:`asyncbreaker.storage.redis.CircuitRedisStorage`.
+Call ``await storage.initialize()`` once after the client is ready (``SETNX`` defaults).
 
 .. code:: python
 
-    from aiobreaker import CircuitBreaker
+    import redis.asyncio as redis
+
+    from asyncbreaker import CircuitBreaker
+    from asyncbreaker.storage.redis import CircuitRedisStorage
+
+    client = redis.from_url("redis://localhost:6379/0", decode_responses=True)
+    storage = CircuitRedisStorage(client, namespace="myapp")
+    await storage.initialize()
+
+    breaker = CircuitBreaker(state_storage=storage)
+
+Ignoring specific exceptions
+-----------------------------
+
+Pass types or callables to ``exclude`` when constructing the breaker, or use
+:meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.add_excluded_exception` /
+:meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.remove_excluded_exception`.
+
+.. code:: python
+
     import sqlite3
 
-    breaker = CircuitBreaker(exclude=[sqlite3.Error])
+    breaker = CircuitBreaker(exclude=[sqlite3.OperationalError])
 
-Exceptions can be ignored on the fly with the
-:func:`~aiobreaker.circuitbreaker.CircuitBreaker.add_excluded_exception` and
-:func:`~aiobreaker.circuitbreaker.CircuitBreaker.remove_excluded_exception`
-functions.
-
-So as to cover cases where the exception class alone is not enough to determine whether it represents a system error, you may also pass a callable rather than a type:
+Callable filters are supported:
 
 .. code:: python
 
-    db_breaker = CircuitBreaker(exclude=[lambda e: type(e) == HTTPError and e.status_code < 500])
-
-You may mix types and filter callables freely.
+    breaker = CircuitBreaker(
+        exclude=[lambda e: type(e).__name__ == "HTTPError" and getattr(e, "status", 500) < 500]
+    )

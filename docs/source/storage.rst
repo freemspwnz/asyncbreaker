@@ -1,19 +1,28 @@
-Storage Backends
+Storage backends
 ================
 
-.. automodule:: aiobreaker.storage
+All backends implement :class:`asyncbreaker.storage.base.CircuitBreakerStorage` with **async**
+methods (``await storage.get_state()``, etc.). Implementations must **clear** ``opened_at`` when
+transitioning to HALF_OPEN so callers using time-based helpers on :class:`~asyncbreaker.circuitbreaker.CircuitBreaker`
+do not see an outdated OPEN deadline while a trial is in progress.
 
-Base Class
+.. automodule:: asyncbreaker.storage
+
+Base class
 ----------
 
-.. automodule:: aiobreaker.storage.base
+.. automodule:: asyncbreaker.storage.base
 
-Memory Storage
+Memory storage
 --------------
 
-.. automodule:: aiobreaker.storage.memory
+.. automodule:: asyncbreaker.storage.memory
 
-Redis Storage
--------------
+Redis storage (``redis.asyncio``)
+---------------------------------
 
-.. automodule:: aiobreaker.storage.redis
+:class:`asyncbreaker.storage.redis.CircuitRedisStorage` expects a connected
+:class:`redis.asyncio.Redis` client. Use ``decode_responses=True`` if you want string values
+from Redis; the implementation accepts both ``str`` and ``bytes`` for reads.
+
+.. automodule:: asyncbreaker.storage.redis
