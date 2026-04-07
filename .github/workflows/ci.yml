@@ -1,34 +1,110 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+# Install dependencies, run tests and quality checks.
+name: CI
 
-name: Continuous Integration
-on: push
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: Tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: [3.6, 3.7, 3.8, 3.9]
+        python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
+          cache: pip
+
+      - name: Install package and test dependencies
         run: pip install -e '.[test]'
-      - name: Pytest
-        run: pytest test --cov=aiobreaker --cov-report=xml
+
+      - name: Run pytest with coverage
+        run: pytest test --cov=asyncbreaker --cov-report=xml
+
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
-      - name: PyLint
-        run: pylint aiobreaker
-        continue-on-error: true
-      - name: Type Analysis
-        run: mypy server; true
-        continue-on-error: true
-      - name: Dependency Warnings
-        run: safety check
-      - name: Security Warnings
-        run: bandit -r aiobreaker
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  quality:
+    name: Type/Lint/SAST
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install package and quality dependencies
+        run: pip install -e '.[test]'
+
+      - name: Mypy
+        run: mypy asyncbreaker
+
+      - name: Pylint
+        run: pylint asyncbreaker
+
+      - name: Bandit
+        run: bandit -r asyncbreaker -c pyproject.toml
+
+  security:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install package and audit tool
+        run: |
+          pip install -e '.[test]'
+          pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit
+
+  package:
+    name: Build package artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Build sdist/wheel
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - name: Smoke-install built wheel
+        run: |
+          pip install dist/*.whl
+          python -c "import asyncbreaker; print(asyncbreaker.__all__)"

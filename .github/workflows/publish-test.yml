@@ -1,9 +1,9 @@
-name: Publish to PyPI
+name: Publish to TestPyPI
 
 on:
   push:
     tags:
-      - "v*"
+      - "test-v*"
 
 permissions:
   contents: read
@@ -34,13 +34,13 @@ jobs:
           path: dist/
 
   publish:
-    name: Publish to PyPI (OIDC)
+    name: Publish to TestPyPI (OIDC)
     runs-on: ubuntu-latest
     needs: build
     permissions:
       id-token: write
     environment:
-      name: pypi
+      name: testpypi
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
@@ -48,5 +48,7 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish package to PyPI
+      - name: Publish package to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
