@@ -1,76 +1,69 @@
 from datetime import timedelta
 
-from pytest import raises
+from pytest import mark, raises
 
-from aiobreaker import CircuitBreaker
-from aiobreaker.listener import CircuitBreakerListener
-from aiobreaker.state import CircuitBreakerState
-from aiobreaker.storage.memory import CircuitMemoryStorage
-from test.util import func_succeed, DummyException
+from asyncbreaker import CircuitBreaker
+from asyncbreaker.listener import CircuitBreakerListener
+from asyncbreaker.state import CircuitBreakerState
+from asyncbreaker.storage import CircuitMemoryStorage
+from test.util import DummyException, func_succeed_async
+
+pytestmark = mark.asyncio
 
 
-def test_default_state():
-    """It should get initial state from state_storage."""
+async def test_default_state():
     for state in CircuitBreakerState:
         storage = CircuitMemoryStorage(state)
         breaker = CircuitBreaker(state_storage=storage)
-        assert isinstance(breaker.state, state.value)
-        assert breaker.state.state == state
+        s = await breaker.fetch_state()
+        assert isinstance(s, state.value)
+        assert s.state == state
 
 
-def test_default_params():
-    """It should define smart defaults."""
+async def test_default_params():
     breaker = CircuitBreaker()
 
-    assert 0 == breaker.fail_counter
+    assert 0 == await breaker.get_fail_counter()
     assert timedelta(seconds=60) == breaker.timeout_duration
     assert 5 == breaker.fail_max
-    assert CircuitBreakerState.CLOSED == breaker.current_state
+    assert CircuitBreakerState.CLOSED == await breaker.get_current_state()
     assert () == breaker.excluded_exceptions
     assert () == breaker.listeners
-    assert 'memory' == breaker._state_storage.name
+    assert 'memory' == breaker.storage_name
 
 
-def test_new_with_custom_reset_timeout():
-    """It should support a custom reset timeout value."""
+async def test_new_with_custom_reset_timeout():
     breaker = CircuitBreaker(timeout_duration=timedelta(seconds=30))
 
-    assert 0 == breaker.fail_counter
+    assert 0 == await breaker.get_fail_counter()
     assert timedelta(seconds=30) == breaker.timeout_duration
     assert 5 == breaker.fail_max
     assert () == breaker.excluded_exceptions
     assert () == breaker.listeners
-    assert 'memory' == breaker._state_storage.name
+    assert 'memory' == breaker.storage_name
 
 
-def test_new_with_custom_fail_max():
-    """It should support a custom maximum number of failures."""
+async def test_new_with_custom_fail_max():
     breaker = CircuitBreaker(fail_max=10)
-    assert 0 == breaker.fail_counter
+    assert 0 == await breaker.get_fail_counter()
     assert timedelta(seconds=60) == breaker.timeout_duration
     assert 10 == breaker.fail_max
     assert () == breaker.excluded_exceptions
     assert () == breaker.listeners
-    assert 'memory' == breaker._state_storage.name
+    assert 'memory' == breaker.storage_name
 
 
-def test_new_with_custom_excluded_exceptions():
-    """CircuitBreaker: it should support a custom list of excluded
-    exceptions.
-    """
+async def test_new_with_custom_excluded_exceptions():
     breaker = CircuitBreaker(exclude=[Exception])
-    assert 0 == breaker.fail_counter
+    assert 0 == await breaker.get_fail_counter()
     assert timedelta(seconds=60) == breaker.timeout_duration
     assert 5 == breaker.fail_max
     assert (Exception,) == breaker.excluded_exceptions
     assert () == breaker.listeners
-    assert 'memory' == breaker._state_storage.name
+    assert 'memory' == breaker.storage_name
 
 
-def test_fail_max_setter():
-    """CircuitBreaker: it should allow the user to set a new value for
-    'fail_max'.
-    """
+async def test_fail_max_setter():
     breaker = CircuitBreaker()
 
     assert 5 == breaker.fail_max
@@ -78,10 +71,7 @@ def test_fail_max_setter():
     assert 10 == breaker.fail_max
 
 
-def test_reset_timeout_setter():
-    """CircuitBreaker: it should allow the user to set a new value for
-    'reset_timeout'.
-    """
+async def test_reset_timeout_setter():
     breaker = CircuitBreaker()
 
     assert timedelta(seconds=60) == breaker.timeout_duration
@@ -89,38 +79,29 @@ def test_reset_timeout_setter():
     assert timedelta(seconds=30) == breaker.timeout_duration
 
 
-def test_call_with_no_args():
-    """    It should be able to invoke functions with no-args."""
+async def test_call_with_no_args_async():
     breaker = CircuitBreaker()
-    assert breaker.call(func_succeed)
+    assert await breaker.call(func_succeed_async)
 
 
-def test_call_with_args():
-    """    It should be able to invoke functions with args."""
-
-    def func(arg1, arg2):
+async def test_call_with_args_async():
+    async def func(arg1, arg2):
         return arg1, arg2
 
     breaker = CircuitBreaker()
+    assert (42, 'abc') == await breaker.call(func, 42, 'abc')
 
-    assert (42, 'abc') == breaker.call(func, 42, 'abc')
 
-
-def test_call_with_kwargs():
-    """    It should be able to invoke functions with kwargs."""
-
-    def func(**kwargs):
+async def test_call_with_kwargs_async():
+    async def func(**kwargs):
         return kwargs
 
     breaker = CircuitBreaker()
-
     kwargs = {'a': 1, 'b': 2}
+    assert kwargs == await breaker.call(func, **kwargs)
 
-    assert kwargs == breaker.call(func, **kwargs)
 
-
-def test_add_listener():
-    """    It should allow the user to add a listener at a later time."""
+async def test_add_listener():
     breaker = CircuitBreaker()
 
     assert () == breaker.listeners
@@ -134,8 +115,7 @@ def test_add_listener():
     assert (first, second) == breaker.listeners
 
 
-def test_add_listeners():
-    """    It should allow the user to add listeners at a later time."""
+async def test_add_listeners():
     breaker = CircuitBreaker()
 
     first, second = CircuitBreakerListener(), CircuitBreakerListener()
@@ -143,8 +123,7 @@ def test_add_listeners():
     assert (first, second) == breaker.listeners
 
 
-def test_remove_listener():
-    """    it should allow the user to remove a listener."""
+async def test_remove_listener():
     breaker = CircuitBreaker()
 
     first = CircuitBreakerListener()
@@ -155,43 +134,41 @@ def test_remove_listener():
     assert () == breaker.listeners
 
 
-def test_excluded_exceptions():
-    """CircuitBreaker: it should ignore specific exceptions.
-    """
+async def test_excluded_exceptions():
     breaker = CircuitBreaker(
-        exclude=[LookupError, lambda e: type(e) == DummyException and e.val == 3])
+        exclude=[LookupError, lambda e: type(e) == DummyException and e.val == 3]
+    )
 
-    def err_1(): raise LookupError()
+    async def err_1():
+        raise LookupError()
 
-    def err_2(): raise DummyException()
+    async def err_2():
+        raise DummyException()
 
-    def err_3(): raise KeyError()
+    async def err_3():
+        raise ValueError()
 
-    def err_4(): raise DummyException(val=3)
+    async def err_4():
+        raise DummyException(val=3)
 
-    # LookupError is not considered a system error
     with raises(LookupError):
-        breaker.call(err_1)
-    assert 0 == breaker.fail_counter
+        await breaker.call(err_1)
+    assert 0 == await breaker.get_fail_counter()
 
     with raises(DummyException):
-        breaker.call(err_2)
-    assert 1 == breaker.fail_counter
+        await breaker.call(err_2)
+    assert 1 == await breaker.get_fail_counter()
 
-    # Should consider subclasses as well (KeyError is a subclass of
-    # LookupError)
-    with raises(KeyError):
-        breaker.call(err_3)
-    assert 0 == breaker.fail_counter
+    with raises(ValueError):
+        await breaker.call(err_3)
+    assert 2 == await breaker.get_fail_counter()
 
-    # should filter based on functions as well
     with raises(DummyException):
-        breaker.call(err_4)
-    assert 0 == breaker.fail_counter
+        await breaker.call(err_4)
+    assert 0 == await breaker.get_fail_counter()
 
 
-def test_add_excluded_exception():
-    """    it should allow the user to exclude an exception at a later time."""
+async def test_add_excluded_exception():
     breaker = CircuitBreaker()
 
     assert () == breaker.excluded_exceptions
@@ -203,16 +180,14 @@ def test_add_excluded_exception():
     assert (NotImplementedError, Exception) == breaker.excluded_exceptions
 
 
-def test_add_excluded_exceptions():
-    """    it should allow the user to exclude exceptions at a later time."""
+async def test_add_excluded_exceptions():
     breaker = CircuitBreaker()
 
     breaker.add_excluded_exceptions(NotImplementedError, Exception)
     assert (NotImplementedError, Exception) == breaker.excluded_exceptions
 
 
-def test_remove_excluded_exception():
-    """It should allow the user to remove an excluded exception."""
+async def test_remove_excluded_exception():
     breaker = CircuitBreaker()
 
     breaker.add_excluded_exception(NotImplementedError)
@@ -222,98 +197,84 @@ def test_remove_excluded_exception():
     assert () == breaker.excluded_exceptions
 
 
-def test_decorator():
-    """It should be a decorator."""
+async def test_decorator_variants():
+    """``@breaker``, ``@breaker()``, and ``@breaker(ignore_on_call=True)`` behave the same for counts."""
+    apply = (
+        lambda br, fn: br(fn),
+        lambda br, fn: br()(fn),
+        lambda br, fn: br(ignore_on_call=True)(fn),
+    )
+    for wrap in apply:
+        breaker = CircuitBreaker()
+        suc = wrap(breaker, _decorated_suc)
+        err = wrap(breaker, _decorated_err)
 
-    breaker = CircuitBreaker()
+        assert 'Docstring' == suc.__doc__
+        assert 'Docstring' == err.__doc__
 
-    @breaker
-    def suc():
-        """Docstring"""
-        pass
+        assert 0 == await breaker.get_fail_counter()
 
-    @breaker
-    def err():
-        """Docstring"""
-        raise DummyException()
+        with raises(DummyException):
+            await err()
 
-    assert 'Docstring' == suc.__doc__
-    assert 'Docstring' == err.__doc__
-    assert 'suc' == suc.__name__
-    assert 'err' == err.__name__
+        assert 1 == await breaker.get_fail_counter()
 
-    assert 0 == breaker.fail_counter
-
-    with raises(DummyException):
-        err()
-
-    assert 1 == breaker.fail_counter
-
-    suc()
-    assert 0 == breaker.fail_counter
+        await suc()
+        assert 0 == await breaker.get_fail_counter()
 
 
-def test_decorator_arguments():
-    """It should accept arguments to the decorator."""
-
-    breaker = CircuitBreaker()
-
-    @breaker(ignore_on_call=True)
-    def suc():
-        """Docstring"""
-        pass
-
-    @breaker()
-    def err():
-        """Docstring"""
-        raise DummyException()
-
-    assert 0 == breaker.fail_counter
-
-    with raises(DummyException):
-        err()
-
-    assert 1 == breaker.fail_counter
-
-    suc()
-    assert 0 == breaker.fail_counter
+async def _decorated_suc():
+    """Docstring"""
+    pass
 
 
-def test_decorator_positional_arguments():
-    """It should throw an error when positional arguments are supplied to the decorator."""
+async def _decorated_err():
+    """Docstring"""
+    raise DummyException()
+
+
+async def test_decorator_positional_arguments():
     breaker = CircuitBreaker()
 
     with raises(TypeError):
+
         @breaker(True)
-        def suc():
+        async def suc():
             """Docstring"""
             pass
 
 
-def test_double_count():
-    """It should not trigger twice if you call CircuitBreaker#call on a decorated function."""
+async def test_decorator_rejects_sync_function():
+    breaker = CircuitBreaker()
 
+    with raises(TypeError):
+
+        @breaker
+        def sync_fn():
+            pass
+
+
+async def test_double_count():
     breaker = CircuitBreaker()
 
     @breaker
-    def err():
+    async def err():
         """Docstring"""
         raise DummyException()
 
-    assert 0 == breaker.fail_counter
+    assert 0 == await breaker.get_fail_counter()
 
     with raises(DummyException):
-        breaker.call(err)
+        await breaker.call(err)
 
-    assert 1 == breaker.fail_counter
+    assert 1 == await breaker.get_fail_counter()
 
 
-def test_name():
-    """It should allow an optional name to be set and retrieved."""
-    name = "test_breaker"
+async def test_name():
+    name = 'test_breaker'
     breaker = CircuitBreaker(name=name)
     assert breaker.name == name
 
-    name = "breaker_test"
+    name = 'breaker_test'
     breaker.name = name
     assert breaker.name == name

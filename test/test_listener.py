@@ -1,69 +1,66 @@
-from _pytest.python_api import raises
+from pytest import mark, raises
 
-from aiobreaker import CircuitBreaker
-from aiobreaker.listener import CircuitBreakerListener
-from aiobreaker.state import CircuitBreakerState
-from test.util import DummyException, func_succeed, func_exception
+from asyncbreaker import CircuitBreaker
+from asyncbreaker.listener import CircuitBreakerListener
+from asyncbreaker.state import CircuitBreakerState
+from test.util import DummyException, func_exception_async, func_succeed_async
+
+pytestmark = mark.asyncio
 
 
-def test_transition_events(storage):
-    """It should call the appropriate functions on every state transition."""
-
+async def test_transition_events(async_storage):
     class Listener(CircuitBreakerListener):
         def __init__(self):
             self.out = []
 
-        def state_change(self, breaker, old, new):
+        async def state_change(self, breaker, old, new):
             assert breaker
             self.out.append((old.state, new.state))
 
     listener = Listener()
-    breaker = CircuitBreaker(listeners=(listener,), state_storage=storage)
-    assert CircuitBreakerState.CLOSED == breaker.current_state
+    breaker = CircuitBreaker(listeners=(listener,), state_storage=async_storage)
+    assert CircuitBreakerState.CLOSED == await breaker.get_current_state()
 
-    breaker.open()
-    assert CircuitBreakerState.OPEN == breaker.current_state
+    await breaker.open()
+    assert CircuitBreakerState.OPEN == await breaker.get_current_state()
 
-    breaker.half_open()
-    assert CircuitBreakerState.HALF_OPEN == breaker.current_state
+    await breaker.half_open()
+    assert CircuitBreakerState.HALF_OPEN == await breaker.get_current_state()
 
-    breaker.close()
-    assert CircuitBreakerState.CLOSED == breaker.current_state
+    await breaker.close()
+    assert CircuitBreakerState.CLOSED == await breaker.get_current_state()
 
     assert [
-               (CircuitBreakerState.CLOSED, CircuitBreakerState.OPEN),
-               (CircuitBreakerState.OPEN, CircuitBreakerState.HALF_OPEN),
-               (CircuitBreakerState.HALF_OPEN, CircuitBreakerState.CLOSED)
-           ] == listener.out
+        (CircuitBreakerState.CLOSED, CircuitBreakerState.OPEN),
+        (CircuitBreakerState.OPEN, CircuitBreakerState.HALF_OPEN),
+        (CircuitBreakerState.HALF_OPEN, CircuitBreakerState.CLOSED),
+    ] == listener.out
 
 
-def test_call_events(storage):
-    """It should call the appropriate functions on every successful/failed call.
-    """
-
+async def test_call_events(async_storage):
     class Listener(CircuitBreakerListener):
         def __init__(self):
             self.out = []
 
-        def before_call(self, breaker, func, *args, **kwargs):
+        async def before_call(self, breaker, func, *args, **kwargs):
             assert breaker
-            self.out.append("CALL")
+            self.out.append('CALL')
 
-        def success(self, breaker):
+        async def success(self, breaker):
             assert breaker
-            self.out.append("SUCCESS")
+            self.out.append('SUCCESS')
 
-        def failure(self, breaker, exception):
+        async def failure(self, breaker, exception):
             assert breaker
             assert isinstance(exception, DummyException)
-            self.out.append("FAILURE")
+            self.out.append('FAILURE')
 
     listener = Listener()
-    breaker = CircuitBreaker(listeners=(listener,), state_storage=storage)
+    breaker = CircuitBreaker(listeners=(listener,), state_storage=async_storage)
 
-    assert breaker.call(func_succeed)
+    assert await breaker.call(func_succeed_async)
 
     with raises(DummyException):
-        breaker.call(func_exception)
+        await breaker.call(func_exception_async)
 
-    assert ["CALL", "SUCCESS", "CALL", "FAILURE"] == listener.out
+    assert ['CALL', 'SUCCESS', 'CALL', 'FAILURE'] == listener.out
