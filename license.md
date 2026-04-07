@@ -1,4 +1,7 @@
 Copyright (c) 2010-2014, Daniel Fernandes Martins
+Copyright (c) 2018-2019, Alexander Lyon (aiobreaker fork)
+Copyright (c) 2026, Sergey Turbinov (asyncbreaker fork)
+
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,

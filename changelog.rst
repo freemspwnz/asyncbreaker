@@ -1,9 +1,97 @@
 Changelog
 =========
 
-FORK 2.0.0 (TBD)
+2.0.0 (April 2026)
+------------------
 
-* Move breaker state to enum
+Maintainer: Sergey Turbinov.
+
+**asyncbreaker** is a maintained fork and major refactor of the asyncio circuit-breaker line
+(**pybreaker** → **aiobreaker** → **asyncbreaker**). This release establishes the production API:
+asyncio-first, pluggable async storage, and explicit time semantics. Python **3.10+** is
+required.
+
+Summary
+~~~~~~~
+
+* Single **async** surface: guarded calls, listener hooks, and persistence all use
+  ``async``/``await``.
+* **State** (CLOSED / OPEN / HALF_OPEN) and failure counts live in a pluggable
+  :class:`~asyncbreaker.storage.base.CircuitBreakerStorage`, so multiple workers can share Redis-backed
+  state; the breaker **refreshes** its cached behavioral state from storage before each
+  :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.call`.
+* **Wall-clock** behavior for OPEN windows is centralized in :mod:`asyncbreaker.timeutil` (naive UTC),
+  keeping Redis timestamps, monitoring helpers, and the state machine aligned.
+
+Breaking changes
+~~~~~~~~~~~~~~~~
+
+* **Package and imports:** install and import **asyncbreaker** (not ``aiobreaker`` / ``pybreaker``).
+  Public symbols are exported from :mod:`asyncbreaker` (including storage types and
+  :exc:`~asyncbreaker.storage.base.StorageError`).
+* **Async-only API:** there is no synchronous ``call``. Use
+  ``await breaker.call(...)``. Manual transitions are
+  ``await breaker.open()`` / ``await breaker.close()`` / ``await breaker.half_open()`` (or
+  ``await breaker.set_circuit_state(...)``).
+* **Listeners are async:** subclass :class:`~asyncbreaker.listener.CircuitBreakerListener` and
+  implement ``async def`` hooks (``before_call``, ``failure``, ``success``, ``state_change``).
+* **Storage is async:** backends implement :class:`~asyncbreaker.storage.base.CircuitBreakerStorage`
+  (async getters/setters). Synchronous storage adapters are not supported.
+* **Decorator:** only **async** functions are accepted; ordinary ``def`` callables are
+  rejected. The decorator can mark wrappers so nested ``call(wrapper)`` does not double-apply
+  the breaker (``ignore_on_call`` / ``_ignore_on_call``).
+* **Removed:** synchronous generator wrapping, threading-oriented paths, and Tornado-specific
+  integration from older forks.
+
+Features and behavior
+~~~~~~~~~~~~~~~~~~~~~
+
+* **Default reset window:** if ``timeout_duration`` is omitted, it defaults to **60 seconds**
+  (still overridable via constructor or property).
+* **Excluded errors:** ``exclude`` accepts exception types and callables
+  ``(exc) -> truthy`` to treat an error as non-system (counter behaves like success).
+* **CircuitBreakerError:** carries ``reopen_time`` (naive UTC when applicable);
+  :attr:`~asyncbreaker.state.CircuitBreakerError.time_remaining` and
+  :meth:`~asyncbreaker.state.CircuitBreakerError.sleep_until_open` for callers and metrics.
+* **Monitoring helpers** on the breaker: :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.compute_opens_at`,
+  :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.get_time_until_open`,
+  :meth:`~asyncbreaker.circuitbreaker.CircuitBreaker.sleep_until_open`, plus async accessors for
+  counter and ``opened_at``.
+* **Explicit state objects:** :class:`~asyncbreaker.state.CircuitBreakerState` maps enum members to
+  small behavior classes (CLOSED / OPEN / HALF_OPEN). OPEN → HALF_OPEN transition after the
+  timeout is integrated into the OPEN state’s call path before the guarded function runs, so
+  listener order matches the state that actually executes the attempt.
+
+Storage and Redis
+~~~~~~~~~~~~~~~~~
+
+* **In-memory:** :class:`~asyncbreaker.storage.memory.CircuitMemoryStorage` for tests and single-process
+  use.
+* **Redis:** :class:`~asyncbreaker.storage.redis.CircuitRedisStorage` uses **redis.asyncio**; optional
+  dependency via ``pip install asyncbreaker[redis]``.
+* **Construction without await:** storage exposes :attr:`~asyncbreaker.storage.base.CircuitBreakerStorage.constructor_state_hint`
+  so :class:`~asyncbreaker.circuitbreaker.CircuitBreaker` can build an initial behavioral state
+  synchronously.
+* **Atomic writes:** OPEN / HALF_OPEN / CLOSED transitions in Redis use transactional **pipelines**
+  (e.g. state + ``opened_at`` + counter) to keep keys consistent under concurrency.
+* **``opened_at`` semantics:** moving to HALF_OPEN clears ``opened_at`` in both backends so
+  time-based helpers do not report a stale OPEN window.
+* **Epoch precision:** ``opened_at`` round-trips via fractional epoch seconds where applicable,
+  consistent with :meth:`datetime.datetime.timestamp`.
+
+Migration notes
+~~~~~~~~~~~~~~~
+
+* Replace ``from aiobreaker ...`` / ``pybreaker`` imports with ``from asyncbreaker ...``.
+* Add ``await`` to every ``call``, listener method, and storage operation you implement or
+  override.
+* Pass a :class:`~asyncbreaker.storage.redis.CircuitRedisStorage` only with an async Redis client from
+  ``redis.asyncio``; call :meth:`~asyncbreaker.storage.redis.CircuitRedisStorage.initialize` where
+  documented for default keys.
+
+
+Earlier fork history (pybreaker / aiobreaker)
+----------------------------------------------
 
 FORK 1.1.0 (Jan 14, 2019)
 

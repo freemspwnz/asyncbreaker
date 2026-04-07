@@ -1,43 +1,40 @@
-Contributing to `aiobreaker`
-============================
+Contributing to asyncbreaker
+==========================
 
-We love your input! We want to make contributing to this project as easy and transparent as possible, whether it's:
+Contributions are welcome: bug reports, discussion, fixes, and feature proposals.
 
-- Reporting a bug
-- Discussing the current state of the code
-- Submitting a fix
-- Proposing new features
-- Becoming a maintainer
-
-Getting Started
+Getting started
 ---------------
 
-This library has no direct dependencies, so all you need is to create a venv of your choice
-and install the extra test dependencies via pip:
+There are no mandatory runtime dependencies (optional ``redis`` for Redis storage).
 
 .. code:: bash
 
-    pyenv virtualenv aiobreaker
+    python -m venv .venv
+    source .venv/bin/activate   # or .venv\\Scripts\\activate on Windows
     pip install -e '.[test]'
     pytest test
-    mypy test
 
-    # if you'd like to build the docs
+To build the documentation:
+
+.. code:: bash
+
     pip install -e '.[docs]'
     sphinx-build docs/source docs/build
 
-Release
--------
+Release (maintainers)
+---------------------
 
-Releases are currently done manually using twine:
+Releases are typically published with ``twine``:
 
 .. code:: bash
 
-    pip install twine wheel
-    python setup.py sdist bdist_wheel
-    twine upload -r pypi dist/*
+    pip install twine build
+    python -m build
+    twine upload dist/*
 
 License
 -------
 
-By contributing, you agree that your contributions will be licensed under its MIT License.
+By contributing, you agree that your contributions will be licensed under the same terms as
+the project: **BSD 3-Clause** (see ``license.md``).
