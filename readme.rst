@@ -1,5 +1,5 @@
 asyncbreaker
-==========
+============
 
 **asyncbreaker** is an **asyncio-first** Python implementation of the Circuit Breaker pattern
 from Michael T. Nygard's book `Release It!`_.
