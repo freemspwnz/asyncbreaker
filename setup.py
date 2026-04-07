@@ -5,17 +5,10 @@ from pathlib import Path
 from setuptools import setup, find_packages
 
 ROOT = Path(__file__).parent
-readme_candidates = [ROOT / "readme.rst", ROOT / "README.rst"]
-for p in readme_candidates:
-    if p.exists():
-        long_description = p.read_text(encoding="utf-8")
-        break
-else:
-    long_description = "Asyncio Circuit Breaker pattern with optional Redis storage."
-
 version_ns = {}
 exec(Path("asyncbreaker/version.py").read_text(encoding="utf-8"), version_ns)
 
+long_description = (ROOT / "README.rst").read_text(encoding="utf-8")
 
 test_dependencies = ['fakeredis', 'pytest>4', 'pytest-asyncio',
                      'mypy', 'pylint', 'safety', 'bandit', 'codecov', 'pytest-cov']

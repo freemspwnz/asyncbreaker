@@ -1,7 +1,7 @@
 Changelog
 =========
 
-2.0.0 (April 2026)
+2.0.1 (April 2026)
 ------------------
 
 Maintainer: Sergey Turbinov.
